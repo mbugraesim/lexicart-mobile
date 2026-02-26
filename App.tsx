@@ -1,23 +1,33 @@
-import React, { useEffect, useMemo, useState } from "react";
+// App.tsx
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
+  Animated,
   Keyboard,
   Pressable,
-  SafeAreaView,
   StyleSheet,
   Text,
   View,
   Platform,
   StatusBar,
+  Easing,
+  Modal,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 
+// ✅ SAFE AREA
+import {
+  SafeAreaProvider,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
+
 import { COLORS } from "./src/ui/colors";
 import MenuDrawer from "./src/ui/MenuDrawer";
 import ManageModal from "./src/ui/ManageModal";
 import AddWordModal from "./src/ui/AddWordModal";
+import ConfirmModal from "./src/ui/ConfirmModal"; // ✅ HEPSİNİ SİL confirm artık custom
 import { parseTxt } from "./src/utils/parseTxt";
 
 /** ========= Types & Storage ========= */
@@ -83,14 +93,28 @@ function mergeDedupe(
   return { merged, added };
 }
 
-/** ========= App ========= */
+/** ========= App (Root) ========= */
 export default function App() {
-  const topPad =
-    Platform.OS === "android" ? StatusBar.currentHeight ?? 10 : 10;
+  return (
+    <SafeAreaProvider>
+      <AppInner />
+    </SafeAreaProvider>
+  );
+}
+
+/** ========= App (Inner) ========= */
+function AppInner() {
+  const insets = useSafeAreaInsets();
 
   const [words, setWords] = useState<WordItem[]>([]);
   const [index, setIndex] = useState(0);
-  const [showMeaning, setShowMeaning] = useState(false);
+
+  // ✅ FLIP STATE
+  const [flipped, setFlipped] = useState(false);
+
+  // ✅ FLIP ANIM
+  const flipAnim = useRef(new Animated.Value(0)).current; // 0=front, 180=back
+  const flippingRef = useRef(false);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
@@ -100,14 +124,38 @@ export default function App() {
   const [armedDeleteId, setArmedDeleteId] = useState<string | null>(null);
   const [armedAt, setArmedAt] = useState(0);
 
+  // ✅ PREMIUM NOTICE (OK'li)
+  const [noticeOpen, setNoticeOpen] = useState(false);
+  const [noticeTitle, setNoticeTitle] = useState("");
+  const [noticeMessage, setNoticeMessage] = useState("");
+  const [noticeTone, setNoticeTone] = useState<"info" | "success" | "error">(
+    "info"
+  );
+
+  const showNotice = (
+    title: string,
+    message: string,
+    tone: "info" | "success" | "error" = "info"
+  ) => {
+    setNoticeTitle(title);
+    setNoticeMessage(message);
+    setNoticeTone(tone);
+    setNoticeOpen(true);
+  };
+
+  // ✅ PREMIUM CONFIRM (Hepsini Sil)
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+
   useEffect(() => {
     (async () => {
       const loaded = await loadWords();
       setWords(loaded);
       setIndex(0);
-      setShowMeaning(false);
+      setFlipped(false);
+      flipAnim.setValue(0);
       setArmedDeleteId(null);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const total = words.length;
@@ -123,16 +171,47 @@ export default function App() {
     await saveWords(next);
   };
 
+  // ===========================
+  // Flip helpers
+  // ===========================
+  const animateFlipTo = (toValue: 0 | 180, onDone?: () => void) => {
+    flippingRef.current = true;
+    Animated.timing(flipAnim, {
+      toValue,
+      duration: 420,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start(() => {
+      flippingRef.current = false;
+      onDone?.();
+    });
+  };
+
+  const resetToFront = () => {
+    setFlipped(false);
+    flipAnim.setValue(0);
+  };
+
+  // ===========================
+  // Next
+  // ===========================
   const goNext = () => {
     if (!words.length) return;
-    setShowMeaning(false);
+    resetToFront(); // ✅ Next => tekrar kelime
     setArmedDeleteId(null);
     setIndex((prev) => (prev + 1) % words.length);
   };
 
-  const toggleCard = () => {
+  // ===========================
+  // Card Press (TOGGLE FLIP)
+  // ===========================
+  const onPressCard = () => {
     if (!current) return;
-    setShowMeaning((p) => !p);
+    if (flippingRef.current) return; // spam tıklamayı engelle
+
+    const nextFlipped = !flipped;
+    setFlipped(nextFlipped);
+    animateFlipTo(nextFlipped ? 180 : 0);
   };
 
   const openAdd = () => {
@@ -166,7 +245,7 @@ export default function App() {
     setAddModalOpen(false);
 
     setIndex(next.length - 1);
-    setShowMeaning(false);
+    resetToFront();
     setArmedDeleteId(null);
   };
 
@@ -191,9 +270,10 @@ export default function App() {
 
       const parsed = parseTxt(content);
       if (!parsed.length) {
-        Alert.alert(
+        showNotice(
           "Bulunamadı",
-          "TXT içinde uygun format bulunamadı.\nÖrnek: what:Ne"
+          "TXT içinde uygun format bulunamadı.\nÖrnek: what:Ne",
+          "error"
         );
         return;
       }
@@ -202,15 +282,17 @@ export default function App() {
       await persist(merged);
 
       setIndex(0);
-      setShowMeaning(false);
+      resetToFront();
       setArmedDeleteId(null);
 
-      Alert.alert(
+      // ✅ ESKİ Alert.alert yerine premium
+      showNotice(
         "İçe aktarıldı",
-        `${added} yeni kelime eklendi.\nToplam: ${merged.length}`
+        `${added} yeni kelime eklendi.\nToplam: ${merged.length}`,
+        "success"
       );
     } catch (e: any) {
-      Alert.alert("Hata", e?.message ?? "Dosya içe aktarma başarısız.");
+      showNotice("Hata", e?.message ?? "Dosya içe aktarma başarısız.", "error");
     }
   };
 
@@ -227,30 +309,29 @@ export default function App() {
       if (!next.length) return 0;
       return Math.min(prev, next.length - 1);
     });
-    setShowMeaning(false);
+    resetToFront();
     setArmedDeleteId(null);
   };
 
+  // ✅ ESKİ Alert.alert confirm yerine premium ConfirmModal
   const clearAll = async () => {
-    Alert.alert("Emin misin?", "Tüm kelimeler silinecek.", [
-      { text: "Vazgeç", style: "cancel" },
-      {
-        text: "Sil",
-        style: "destructive",
-        onPress: async () => {
-          await persist([]);
-          setIndex(0);
-          setShowMeaning(false);
-          setArmedDeleteId(null);
-          setManageOpen(false);
-        },
-      },
-    ]);
+    if (!words.length) return;
+    setClearConfirmOpen(true);
   };
 
-  const cardBg = showMeaning ? COLORS.cardGreen : COLORS.cardBlue;
+  const confirmClearAll = async () => {
+    setClearConfirmOpen(false);
+    await persist([]);
+    setIndex(0);
+    resetToFront();
+    setArmedDeleteId(null);
+    setManageOpen(false);
+    showNotice("Temizlendi", "Tüm kelimeler silindi.", "success");
+  };
 
-  // ✅ Sil: 2 kere basınca silsin (BURASI)
+  // ===========================
+  // Delete (2 kere bas)
+  // ===========================
   const pressDeleteCurrent = async () => {
     if (!current) return;
 
@@ -267,47 +348,132 @@ export default function App() {
     setArmedAt(now);
   };
 
+  // ===========================
+  // Top Padding
+  // ===========================
+  const topPad = insets.top + UI.topBarExtraTop;
+
+  // ===========================
+  // Animated styles (3D Flip)
+  // ===========================
+  const frontRotate = flipAnim.interpolate({
+    inputRange: [0, 180],
+    outputRange: ["0deg", "180deg"],
+  });
+
+  const backRotate = flipAnim.interpolate({
+    inputRange: [0, 180],
+    outputRange: ["180deg", "360deg"],
+  });
+
+  const frontOpacity = flipAnim.interpolate({
+    inputRange: [0, 90, 180],
+    outputRange: [1, 0, 0],
+  });
+
+  const backOpacity = flipAnim.interpolate({
+    inputRange: [0, 90, 180],
+    outputRange: [0, 0, 1],
+  });
+
+  const cardBg = flipped
+    ? (COLORS.meaningBlue ?? "#60A5FA")
+    : (COLORS.brandBlue ?? COLORS.cardBlue);
+
   return (
-    <SafeAreaView style={[styles.container, { paddingTop: topPad }]}>
+    <View style={styles.container}>
+      <StatusBar
+        barStyle="light-content"
+        backgroundColor={COLORS.brandBlue ?? COLORS.cardBlue}
+        translucent={false}
+      />
+
       {/* Top Bar */}
-      <View style={styles.topBar}>
-        <Pressable style={styles.iconBtn} onPress={() => setMenuOpen(true)}>
-          <Text style={styles.iconText}>☰</Text>
-        </Pressable>
+      <View style={[styles.topBarWrap, { paddingTop: topPad }]}>
+        <View style={styles.topBar}>
+          <Pressable
+            style={({ pressed }) => [styles.iconBtn, pressed && styles.pressed]}
+            onPress={() => setMenuOpen(true)}
+          >
+            <Text style={styles.iconText}>☰</Text>
+          </Pressable>
 
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>LexiKart</Text>
-          <Text style={styles.subtitle}>
-            Dokun: kelime/anlam • Next: sıradaki
-          </Text>
-        </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.title}>LexiKart</Text>
+            <Text style={styles.subtitle}>
+              Dokun: kelime/anlam • Next: sıradaki
+            </Text>
+          </View>
 
-        <View style={styles.countPill}>
-          <Text style={styles.countText}>{total}</Text>
+          <View style={styles.countPill}>
+            <Text style={styles.countText}>{total}</Text>
+          </View>
         </View>
       </View>
 
-      {/* Kart + Butonlar */}
+      {/* Content */}
       <View style={styles.centerArea}>
         <Pressable
           style={[styles.card, { backgroundColor: cardBg }]}
-          onPress={toggleCard}
+          onPress={onPressCard}
           disabled={!current}
         >
-          <Text style={styles.cardText}>
-            {!current
-              ? "Henüz kelime yok.\nMenüden TXT içe aktar veya kelime ekle."
-              : showMeaning
-              ? current.meaning
-              : current.word}
-          </Text>
+          {/* ✅ Flip Faces */}
+          <View style={styles.flipWrap}>
+            {/* FRONT (word) */}
+            <Animated.View
+              style={[
+                styles.face,
+                {
+                  opacity: frontOpacity,
+                  transform: [{ perspective: 1000 }, { rotateY: frontRotate }],
+                },
+              ]}
+            >
+              <Text style={styles.cardText}>
+                {!current
+                  ? "Henüz kelime yok.\nMenüden TXT içe aktar veya kelime ekle."
+                  : current.word}
+              </Text>
+            </Animated.View>
+
+            {/* BACK (meaning) */}
+            <Animated.View
+              style={[
+                styles.face,
+                styles.faceBack,
+                {
+                  opacity: backOpacity,
+                  transform: [{ perspective: 1000 }, { rotateY: backRotate }],
+                },
+              ]}
+            >
+              <Text style={styles.cardText}>
+                {!current
+                  ? "Henüz kelime yok.\nMenüden TXT içe aktar veya kelime ekle."
+                  : current.meaning}
+              </Text>
+            </Animated.View>
+          </View>
+
+          {!!current && (
+            <View style={styles.cardFooter}>
+              <View style={styles.progressPill}>
+                <Text style={styles.progressText}>
+                  {Math.min(index + 1, total)} / {total}
+                </Text>
+              </View>
+            </View>
+          )}
         </Pressable>
 
         <View style={styles.actionsRow}>
           <Pressable
-            style={[
+            style={({ pressed }) => [
               styles.actionBtn,
-              { backgroundColor: "#111827", opacity: current ? 1 : 0.5 },
+              styles.dangerBtn,
+              (!current || !total) && styles.disabled,
+              pressed && current && styles.pressedBtn,
             ]}
             onPress={pressDeleteCurrent}
             disabled={!current}
@@ -320,9 +486,11 @@ export default function App() {
           </Pressable>
 
           <Pressable
-            style={[
+            style={({ pressed }) => [
               styles.actionBtn,
-              { backgroundColor: COLORS.black, opacity: current ? 1 : 0.5 },
+              styles.primaryBtn,
+              (!current || !total) && styles.disabled,
+              pressed && current && styles.pressedBtn,
             ]}
             onPress={goNext}
             disabled={!current}
@@ -359,93 +527,321 @@ export default function App() {
         onClose={() => setAddModalOpen(false)}
         onSave={addOneWord}
       />
-    </SafeAreaView>
+
+      {/* ✅ Premium OK Popup (Alert yerine) */}
+      <NoticeModal
+        visible={noticeOpen}
+        title={noticeTitle}
+        message={noticeMessage}
+        tone={noticeTone}
+        onClose={() => setNoticeOpen(false)}
+      />
+
+      {/* ✅ Premium Confirm (Hepsini Sil) */}
+      <ConfirmModal
+        visible={clearConfirmOpen}
+        title="Hepsi silinsin mi?"
+        message={`Tüm kelimeler kalıcı olarak silinecek.${words.length ? `\nToplam: ${words.length}` : ""}`}
+        cancelText="Vazgeç"
+        confirmText="Sil"
+        danger
+        onCancel={() => setClearConfirmOpen(false)}
+        onConfirm={confirmClearAll}
+      />
+    </View>
   );
 }
 
+/* ===========================
+   Premium OK Modal (tek dosyada)
+=========================== */
+function NoticeModal({
+  visible,
+  title,
+  message,
+  tone,
+  onClose,
+}: {
+  visible: boolean;
+  title: string;
+  message: string;
+  tone: "info" | "success" | "error";
+  onClose: () => void;
+}) {
+  const badgeBg =
+    tone === "success"
+      ? "rgba(34,197,94,0.14)"
+      : tone === "error"
+      ? "rgba(239,68,68,0.14)"
+      : "rgba(79,70,229,0.14)";
+
+  const badgeBorder =
+    tone === "success"
+      ? "rgba(34,197,94,0.28)"
+      : tone === "error"
+      ? "rgba(239,68,68,0.28)"
+      : "rgba(79,70,229,0.28)";
+
+  const badgeText =
+    tone === "success"
+      ? "#16A34A"
+      : tone === "error"
+      ? "#DC2626"
+      : (COLORS.brandBlue ?? "#4F46E5");
+
+  const badgeLabel = tone === "success" ? "✓" : tone === "error" ? "!" : "i";
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={noticeStyles.backdrop} onPress={onClose} />
+      <View style={noticeStyles.center}>
+        <View style={noticeStyles.card}>
+          <View style={[noticeStyles.badge, { backgroundColor: badgeBg, borderColor: badgeBorder }]}>
+            <Text style={[noticeStyles.badgeText, { color: badgeText }]}>{badgeLabel}</Text>
+          </View>
+
+          <Text style={noticeStyles.title}>{title}</Text>
+          <Text style={noticeStyles.msg}>{message}</Text>
+
+          <Pressable style={({ pressed }) => [noticeStyles.okBtn, pressed && noticeStyles.pressed]} onPress={onClose}>
+            <Text style={noticeStyles.okText}>Tamam</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const noticeStyles = StyleSheet.create({
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: COLORS.backdrop ?? "rgba(2,6,23,0.45)",
+  },
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    padding: 18,
+  },
+  card: {
+    backgroundColor: COLORS.surface ?? COLORS.white,
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    shadowColor: "#000",
+    shadowOpacity: 0.16,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 10,
+  },
+  badge: {
+    width: 42,
+    height: 42,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    marginBottom: 10,
+  },
+  badgeText: {
+    fontWeight: "900",
+    fontSize: 18,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: COLORS.text,
+    letterSpacing: 0.2,
+  },
+  msg: {
+    marginTop: 8,
+    color: COLORS.muted,
+    fontWeight: "700",
+    lineHeight: 20,
+  },
+  okBtn: {
+    marginTop: 14,
+    height: 46,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.buttonPrimary ?? COLORS.brandBlue ?? "#4F46E5",
+  },
+  okText: {
+    color: COLORS.white,
+    fontWeight: "900",
+    letterSpacing: 0.2,
+  },
+  pressed: { opacity: 0.92, transform: [{ scale: 0.985 }] },
+});
+
+/* ===========================
+   İnce Ayar Alanı
+=========================== */
+const UI = {
+  pagePadX: 16,
+
+  topBarExtraTop: Platform.OS === "ios" ? 8 : 10,
+  topBarPaddingBottom: 12,
+  topBarRadius: 22,
+
+  cardMinHeight: 220,
+  cardRadius: 26,
+  centerPadBottom: 18,
+};
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg, paddingHorizontal: 16 },
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.bg,
+  },
+
+  topBarWrap: {
+    backgroundColor: COLORS.brandBlue ?? COLORS.cardBlue,
+    paddingBottom: UI.topBarPaddingBottom,
+    paddingHorizontal: UI.pagePadX,
+    borderBottomLeftRadius: UI.topBarRadius,
+    borderBottomRightRadius: UI.topBarRadius,
+  },
 
   topBar: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    marginBottom: 8,
   },
+
   iconBtn: {
     width: 44,
     height: 44,
     borderRadius: 14,
-    backgroundColor: COLORS.white,
+    backgroundColor: "rgba(255,255,255,0.16)",
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: "rgba(255,255,255,0.18)",
     alignItems: "center",
     justifyContent: "center",
   },
-  iconText: { fontSize: 18, fontWeight: "900", color: COLORS.text },
-  title: { fontSize: 24, fontWeight: "900", color: COLORS.text },
+  iconText: { fontSize: 18, fontWeight: "900", color: COLORS.white },
+
+  title: {
+    fontSize: 24,
+    fontWeight: "900",
+    color: COLORS.white,
+    letterSpacing: 0.2,
+  },
   subtitle: {
     marginTop: 2,
-    color: COLORS.muted,
+    color: "rgba(255,255,255,0.82)",
     fontWeight: "700",
     fontSize: 12,
   },
+
   countPill: {
     minWidth: 44,
     height: 34,
     borderRadius: 999,
-    backgroundColor: COLORS.white,
+    backgroundColor: "rgba(255,255,255,0.16)",
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: "rgba(255,255,255,0.18)",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 10,
   },
-  countText: { fontWeight: "900", color: COLORS.text },
+  countText: { fontWeight: "900", color: COLORS.white },
 
-  // ✅ Kartın yeri (BURASI)
+  pressed: { opacity: 0.88, transform: [{ scale: 0.98 }] },
+
   centerArea: {
     flex: 1,
-    justifyContent: "center",
-    paddingBottom: 200,
+    paddingHorizontal: UI.pagePadX,
+    paddingTop: 140, // (istersen bunu 90-110 arası yaparız)
+    paddingBottom: UI.centerPadBottom,
+    justifyContent: "flex-start",
   },
 
   card: {
-    minHeight: 220,
-    borderRadius: 22,
+    minHeight: UI.cardMinHeight,
+    borderRadius: UI.cardRadius,
     alignItems: "center",
     justifyContent: "center",
     padding: 18,
     shadowColor: "#000",
-    shadowOpacity: 0.18,
-    shadowRadius: 18,
+    shadowOpacity: 0.16,
+    shadowRadius: 20,
     shadowOffset: { width: 0, height: 10 },
     elevation: 10,
+    overflow: "hidden",
   },
+
+  // ✅ Flip container
+  flipWrap: {
+    width: "100%",
+    minHeight: UI.cardMinHeight - 36,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  // ✅ Faces
+  face: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    backfaceVisibility: "hidden",
+    paddingHorizontal: 8,
+  },
+  faceBack: {},
+
   cardText: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: "900",
     color: COLORS.white,
     textAlign: "center",
-    lineHeight: 30,
+    lineHeight: 32,
   },
 
-  actionsRow: { flexDirection: "row", gap: 10, marginTop: 12 },
+  cardFooter: {
+    position: "absolute",
+    left: 14,
+    right: 14,
+    bottom: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-start",
+  },
+  progressPill: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.16)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+  },
+  progressText: { color: COLORS.white, fontWeight: "900" },
+
+  actionsRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 12,
+  },
   actionBtn: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 14,
+    paddingVertical: 13,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: COLORS.border,
   },
+  pressedBtn: { transform: [{ scale: 0.985 }], opacity: 0.92 },
+  disabled: { opacity: 0.5 },
+
+  dangerBtn: { backgroundColor: "rgba(239,68,68,0.92)" },
+  primaryBtn: { backgroundColor: COLORS.black },
   actionText: { color: COLORS.white, fontWeight: "900" },
 
   deleteHint: {
     marginTop: 10,
     textAlign: "center",
     color: "#B91C1C",
-    fontWeight: "800",
+    fontWeight: "900",
   },
 });

@@ -7,23 +7,34 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+
     "splash": {
       "image": "./assets/icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#4F46E5"
     },
+
     "ios": {
       "supportsTablet": true
     },
+
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#4F46E5"
       },
-      "edgeToEdgeEnabled": true,
+
+      "statusBar": {
+        "backgroundColor": "#4F46E5",
+        "barStyle": "light-content",
+        "translucent": false
+      },
+
+      "edgeToEdgeEnabled": false,
       "predictiveBackGestureEnabled": false,
       "package": "com.xreybes29.lexicartmobile"
     },
+
     "web": {
       "favicon": "./assets/icon.png"
     }
