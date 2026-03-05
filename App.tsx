@@ -246,6 +246,28 @@ function AppInner() {
   };
 
   // ===========================
+  // ✅ Random
+  // ===========================
+  const goRandom = () => {
+    if (!words.length) return;
+    resetToFront();
+    setArmedDeleteId(null);
+
+    if (words.length === 1) {
+      setIndex(0);
+      return;
+    }
+
+    const nextIndex = (() => {
+      let r = Math.floor(Math.random() * words.length);
+      if (r === index) r = (r + 1) % words.length;
+      return r;
+    })();
+
+    setIndex(nextIndex);
+  };
+
+  // ===========================
   // Card Press (TOGGLE FLIP)
   // ===========================
   const onPressCard = () => {
@@ -540,6 +562,22 @@ function AppInner() {
           </Pressable>
         </View>
 
+        {/* ✅ Random (Previous/Next altına, tam genişlik + yazı görünür) */}
+        <View style={styles.randomRow}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.randomBtn, // ✅ sadece random için: tam genişlik + aynı yükseklik
+              styles.primaryBtn, // ✅ Next ile aynı renk
+              (!current || !total) && styles.disabled,
+              pressed && current && styles.pressedBtn,
+            ]}
+            onPress={goRandom}
+            disabled={!current}
+          >
+            <Text style={styles.actionText}>Random</Text>
+          </Pressable>
+        </View>
+
         {armed && (
           <Text style={styles.deleteHint}>
             Silmek için sağ alttaki butona 2. kez bas (2.5 sn içinde)
@@ -547,7 +585,7 @@ function AppInner() {
         )}
       </View>
 
-      {/* ✅ Yeni: Sil butonu (ghost pill) */}
+      {/* ✅ Sil butonu (ghost pill) */}
       <Pressable
         onPress={pressDeleteCurrent}
         disabled={!current}
@@ -765,9 +803,13 @@ const UI = {
   cardRadius: 26,
   centerPadBottom: 18,
 
+  // ✅ CTRL+F: CONTENT_BLOCK_TOP
+  // Bu değer; kart + butonlar bloğunu komple aşağı/yukarı taşır (centerArea paddingTop) burası yükseklik
+  contentBlockTop: 120,
+
   // ✅ Sil butonunu buradan taşı: (istediğin yere koy)
   deleteAnchor: {
-    right: 16, // sağdan
+    right: 30, // sağdan
     bottom: 16, // alttan (insets ile otomatik ekleniyor)
   },
 };
@@ -835,7 +877,7 @@ const styles = StyleSheet.create({
   centerArea: {
     flex: 1,
     paddingHorizontal: UI.pagePadX,
-    paddingTop: 140,
+    paddingTop: UI.contentBlockTop, // ✅ CTRL+F: CONTENT_BLOCK_TOP
     paddingBottom: UI.centerPadBottom,
     justifyContent: "flex-start",
   },
@@ -904,6 +946,13 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: 12,
   },
+
+  // ✅ Random satırı (tam genişlik)
+  randomRow: {
+    width: "100%",
+    marginTop: 10,
+  },
+
   actionBtn: {
     flex: 1,
     paddingVertical: 13,
@@ -911,6 +960,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
+  // ✅ Random buton: tam genişlik + Previous/Next ile aynı yükseklik
+  randomBtn: {
+    width: "100%",
+    paddingVertical: 13,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
   pressedBtn: { transform: [{ scale: 0.985 }], opacity: 0.92 },
   disabled: { opacity: 0.5 },
 
