@@ -17,6 +17,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 
+// ✅ SPLASH (1sn beklet)
+import * as SplashScreen from "expo-splash-screen";
+
 // ✅ SAFE AREA
 import {
   SafeAreaProvider,
@@ -27,7 +30,7 @@ import { COLORS } from "./src/ui/colors";
 import MenuDrawer from "./src/ui/MenuDrawer";
 import ManageModal from "./src/ui/ManageModal";
 import AddWordModal from "./src/ui/AddWordModal";
-import ConfirmModal from "./src/ui/ConfirmModal"; // ✅ HEPSİNİ SİL confirm artık custom
+import ConfirmModal from "./src/ui/ConfirmModal";
 import { parseTxt } from "./src/utils/parseTxt";
 
 /** ========= Types & Storage ========= */
@@ -95,6 +98,36 @@ function mergeDedupe(
 
 /** ========= App (Root) ========= */
 export default function App() {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      try {
+        await SplashScreen.preventAutoHideAsync();
+        await new Promise((r) => setTimeout(r, 1000));
+
+        if (!mounted) return;
+        setReady(true);
+
+        requestAnimationFrame(() => {
+          SplashScreen.hideAsync().catch(() => {});
+        });
+      } catch {
+        if (!mounted) return;
+        setReady(true);
+        SplashScreen.hideAsync().catch(() => {});
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  if (!ready) return null;
+
   return (
     <SafeAreaProvider>
       <AppInner />
@@ -178,7 +211,7 @@ function AppInner() {
     flippingRef.current = true;
     Animated.timing(flipAnim, {
       toValue,
-      duration: 420,
+      duration: 220,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start(() => {
@@ -193,13 +226,23 @@ function AppInner() {
   };
 
   // ===========================
-  // Next
+  // Next / Prev
   // ===========================
   const goNext = () => {
     if (!words.length) return;
-    resetToFront(); // ✅ Next => tekrar kelime
+    resetToFront();
     setArmedDeleteId(null);
     setIndex((prev) => (prev + 1) % words.length);
+  };
+
+  const goPrev = () => {
+    if (!words.length) return;
+    resetToFront();
+    setArmedDeleteId(null);
+    setIndex((prev) => {
+      const next = prev - 1;
+      return next < 0 ? words.length - 1 : next;
+    });
   };
 
   // ===========================
@@ -207,7 +250,7 @@ function AppInner() {
   // ===========================
   const onPressCard = () => {
     if (!current) return;
-    if (flippingRef.current) return; // spam tıklamayı engelle
+    if (flippingRef.current) return;
 
     const nextFlipped = !flipped;
     setFlipped(nextFlipped);
@@ -285,7 +328,6 @@ function AppInner() {
       resetToFront();
       setArmedDeleteId(null);
 
-      // ✅ ESKİ Alert.alert yerine premium
       showNotice(
         "İçe aktarıldı",
         `${added} yeni kelime eklendi.\nToplam: ${merged.length}`,
@@ -313,7 +355,6 @@ function AppInner() {
     setArmedDeleteId(null);
   };
 
-  // ✅ ESKİ Alert.alert confirm yerine premium ConfirmModal
   const clearAll = async () => {
     if (!words.length) return;
     setClearConfirmOpen(true);
@@ -353,6 +394,10 @@ function AppInner() {
   // ===========================
   const topPad = insets.top + UI.topBarExtraTop;
 
+  // ✅ Delete button anchor (buradan konum ayarla)
+  const delRight = UI.deleteAnchor.right;
+  const delBottom = Math.max(insets.bottom, 10) + UI.deleteAnchor.bottom;
+
   // ===========================
   // Animated styles (3D Flip)
   // ===========================
@@ -380,6 +425,8 @@ function AppInner() {
     ? (COLORS.meaningBlue ?? "#60A5FA")
     : (COLORS.brandBlue ?? COLORS.cardBlue);
 
+  const armed = !!armedDeleteId && current?.id === armedDeleteId;
+
   return (
     <View style={styles.container}>
       <StatusBar
@@ -401,7 +448,7 @@ function AppInner() {
           <View style={{ flex: 1 }}>
             <Text style={styles.title}>LexiKart</Text>
             <Text style={styles.subtitle}>
-              Dokun: kelime/anlam • Next: sıradaki
+              Dokun: kelime/anlam • Previous/Next: gez
             </Text>
           </View>
 
@@ -418,9 +465,7 @@ function AppInner() {
           onPress={onPressCard}
           disabled={!current}
         >
-          {/* ✅ Flip Faces */}
           <View style={styles.flipWrap}>
-            {/* FRONT (word) */}
             <Animated.View
               style={[
                 styles.face,
@@ -437,7 +482,6 @@ function AppInner() {
               </Text>
             </Animated.View>
 
-            {/* BACK (meaning) */}
             <Animated.View
               style={[
                 styles.face,
@@ -467,22 +511,19 @@ function AppInner() {
           )}
         </Pressable>
 
+        {/* Actions: Previous + Next */}
         <View style={styles.actionsRow}>
           <Pressable
             style={({ pressed }) => [
               styles.actionBtn,
-              styles.dangerBtn,
+              styles.secondaryBtn,
               (!current || !total) && styles.disabled,
               pressed && current && styles.pressedBtn,
             ]}
-            onPress={pressDeleteCurrent}
+            onPress={goPrev}
             disabled={!current}
           >
-            <Text style={styles.actionText}>
-              {armedDeleteId && current?.id === armedDeleteId
-                ? "Tekrar Bas"
-                : "Sil"}
-            </Text>
+            <Text style={styles.actionText}>Previous</Text>
           </Pressable>
 
           <Pressable
@@ -499,12 +540,29 @@ function AppInner() {
           </Pressable>
         </View>
 
-        {armedDeleteId && current?.id === armedDeleteId && (
+        {armed && (
           <Text style={styles.deleteHint}>
-            Silmek için 2. kez bas (2.5 sn içinde)
+            Silmek için sağ alttaki butona 2. kez bas (2.5 sn içinde)
           </Text>
         )}
       </View>
+
+      {/* ✅ Yeni: Sil butonu (ghost pill) */}
+      <Pressable
+        onPress={pressDeleteCurrent}
+        disabled={!current}
+        style={({ pressed }) => [
+          styles.deletePill,
+          { right: delRight, bottom: delBottom },
+          (!current || !total) && styles.deletePillDisabled,
+          pressed && current && styles.deletePillPressed,
+          armed && styles.deletePillArmed,
+        ]}
+      >
+        <Text style={[styles.deletePillText, armed && styles.deletePillTextArmed]}>
+          {armed ? "Tekrar Sil" : "Sil"}
+        </Text>
+      </Pressable>
 
       <MenuDrawer
         visible={menuOpen}
@@ -528,7 +586,6 @@ function AppInner() {
         onSave={addOneWord}
       />
 
-      {/* ✅ Premium OK Popup (Alert yerine) */}
       <NoticeModal
         visible={noticeOpen}
         title={noticeTitle}
@@ -537,11 +594,12 @@ function AppInner() {
         onClose={() => setNoticeOpen(false)}
       />
 
-      {/* ✅ Premium Confirm (Hepsini Sil) */}
       <ConfirmModal
         visible={clearConfirmOpen}
         title="Hepsi silinsin mi?"
-        message={`Tüm kelimeler kalıcı olarak silinecek.${words.length ? `\nToplam: ${words.length}` : ""}`}
+        message={`Tüm kelimeler kalıcı olarak silinecek.${
+          words.length ? `\nToplam: ${words.length}` : ""
+        }`}
         cancelText="Vazgeç"
         confirmText="Sil"
         danger
@@ -553,7 +611,7 @@ function AppInner() {
 }
 
 /* ===========================
-   Premium OK Modal (tek dosyada)
+   Premium OK Modal
 =========================== */
 function NoticeModal({
   visible,
@@ -592,18 +650,36 @@ function NoticeModal({
   const badgeLabel = tone === "success" ? "✓" : tone === "error" ? "!" : "i";
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
       <Pressable style={noticeStyles.backdrop} onPress={onClose} />
       <View style={noticeStyles.center}>
         <View style={noticeStyles.card}>
-          <View style={[noticeStyles.badge, { backgroundColor: badgeBg, borderColor: badgeBorder }]}>
-            <Text style={[noticeStyles.badgeText, { color: badgeText }]}>{badgeLabel}</Text>
+          <View
+            style={[
+              noticeStyles.badge,
+              { backgroundColor: badgeBg, borderColor: badgeBorder },
+            ]}
+          >
+            <Text style={[noticeStyles.badgeText, { color: badgeText }]}>
+              {badgeLabel}
+            </Text>
           </View>
 
           <Text style={noticeStyles.title}>{title}</Text>
           <Text style={noticeStyles.msg}>{message}</Text>
 
-          <Pressable style={({ pressed }) => [noticeStyles.okBtn, pressed && noticeStyles.pressed]} onPress={onClose}>
+          <Pressable
+            style={({ pressed }) => [
+              noticeStyles.okBtn,
+              pressed && noticeStyles.pressed,
+            ]}
+            onPress={onClose}
+          >
             <Text style={noticeStyles.okText}>Tamam</Text>
           </Pressable>
         </View>
@@ -688,6 +764,12 @@ const UI = {
   cardMinHeight: 220,
   cardRadius: 26,
   centerPadBottom: 18,
+
+  // ✅ Sil butonunu buradan taşı: (istediğin yere koy)
+  deleteAnchor: {
+    right: 16, // sağdan
+    bottom: 16, // alttan (insets ile otomatik ekleniyor)
+  },
 };
 
 const styles = StyleSheet.create({
@@ -753,7 +835,7 @@ const styles = StyleSheet.create({
   centerArea: {
     flex: 1,
     paddingHorizontal: UI.pagePadX,
-    paddingTop: 140, // (istersen bunu 90-110 arası yaparız)
+    paddingTop: 140,
     paddingBottom: UI.centerPadBottom,
     justifyContent: "flex-start",
   },
@@ -772,7 +854,6 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
 
-  // ✅ Flip container
   flipWrap: {
     width: "100%",
     minHeight: UI.cardMinHeight - 36,
@@ -780,7 +861,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  // ✅ Faces
   face: {
     position: "absolute",
     left: 0,
@@ -834,7 +914,7 @@ const styles = StyleSheet.create({
   pressedBtn: { transform: [{ scale: 0.985 }], opacity: 0.92 },
   disabled: { opacity: 0.5 },
 
-  dangerBtn: { backgroundColor: "rgba(239,68,68,0.92)" },
+  secondaryBtn: { backgroundColor: "rgba(15,23,42,0.92)" },
   primaryBtn: { backgroundColor: COLORS.black },
   actionText: { color: COLORS.white, fontWeight: "900" },
 
@@ -843,5 +923,37 @@ const styles = StyleSheet.create({
     textAlign: "center",
     color: "#B91C1C",
     fontWeight: "900",
+  },
+
+  // ✅ Yeni Sil Butonu: ghost pill (kırmızı basmıyor)
+  deletePill: {
+    position: "absolute",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.85)",
+    borderWidth: 1,
+    borderColor: "rgba(15,23,42,0.12)",
+    shadowColor: "#000",
+    shadowOpacity: 0.10,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
+  },
+  deletePillText: {
+    color: "rgba(15,23,42,0.78)",
+    fontWeight: "900",
+    letterSpacing: 0.2,
+  },
+  deletePillPressed: { transform: [{ scale: 0.99 }], opacity: 0.92 },
+  deletePillDisabled: { opacity: 0.45 },
+
+  // Armed olunca hafif uyarı (koyu kırmızı değil)
+  deletePillArmed: {
+    backgroundColor: "rgba(255,245,245,0.95)",
+    borderColor: "rgba(239,68,68,0.22)",
+  },
+  deletePillTextArmed: {
+    color: "rgba(185,28,28,0.9)",
   },
 });

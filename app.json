@@ -14,6 +14,12 @@
       "backgroundColor": "#4F46E5"
     },
 
+    "androidStatusBar": {
+      "backgroundColor": "#4F46E5",
+      "barStyle": "light-content",
+      "translucent": false
+    },
+
     "ios": {
       "supportsTablet": true
     },
@@ -23,15 +29,6 @@
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#4F46E5"
       },
-
-      "statusBar": {
-        "backgroundColor": "#4F46E5",
-        "barStyle": "light-content",
-        "translucent": false
-      },
-
-      "edgeToEdgeEnabled": false,
-      "predictiveBackGestureEnabled": false,
       "package": "com.xreybes29.lexicartmobile"
     },
 
