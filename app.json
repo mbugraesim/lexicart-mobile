@@ -20,6 +20,11 @@
       "translucent": false
     },
 
+    "androidNavigationBar": {
+      "backgroundColor": "#4F46E5",
+      "barStyle": "light-content"
+    },
+
     "ios": {
       "supportsTablet": true
     },

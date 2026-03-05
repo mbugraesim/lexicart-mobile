@@ -19,14 +19,14 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 
+// ✅ ANDROID NAV BAR (ALT TUŞ BAR RENGİ)
+import * as NavigationBar from "expo-navigation-bar";
+
 // ✅ SPLASH (1sn beklet)
 import * as SplashScreen from "expo-splash-screen";
 
 // ✅ SAFE AREA
-import {
-  SafeAreaProvider,
-  useSafeAreaInsets,
-} from "react-native-safe-area-context";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { COLORS } from "./src/ui/colors";
 import MenuDrawer from "./src/ui/MenuDrawer";
@@ -65,10 +65,7 @@ async function saveWords(words: WordItem[]) {
   await AsyncStorage.setItem(KEY, JSON.stringify(words));
 }
 
-function mergeDedupe(
-  existing: WordItem[],
-  incoming: { word: string; meaning: string }[]
-) {
+function mergeDedupe(existing: WordItem[], incoming: { word: string; meaning: string }[]) {
   const map = new Map<string, WordItem>();
 
   for (const w of existing) {
@@ -92,9 +89,7 @@ function mergeDedupe(
     }
   }
 
-  const merged = Array.from(map.values()).sort(
-    (a, b) => a.createdAt - b.createdAt
-  );
+  const merged = Array.from(map.values()).sort((a, b) => a.createdAt - b.createdAt);
   return { merged, added };
 }
 
@@ -163,9 +158,7 @@ function AppInner() {
   const [noticeOpen, setNoticeOpen] = useState(false);
   const [noticeTitle, setNoticeTitle] = useState("");
   const [noticeMessage, setNoticeMessage] = useState("");
-  const [noticeTone, setNoticeTone] = useState<"info" | "success" | "error">(
-    "info"
-  );
+  const [noticeTone, setNoticeTone] = useState<"info" | "success" | "error">("info");
 
   // ✅ BLOK YÜKSEKLİĞİ (ilk açılış 140)
   const [contentTop, setContentTop] = useState(140);
@@ -174,19 +167,16 @@ function AppInner() {
   const [centerH, setCenterH] = useState(0);
   const [blockH, setBlockH] = useState(0);
 
-  const clamp = (v: number, min: number, max: number) =>
-    Math.max(min, Math.min(max, v));
+  const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
   // ✅ 5px ÜST SINIR: mavi barın 5px altı (centerArea zaten barın altında)
   const minTop = UI.edgeGap; // = 5
 
   // ✅ 5px ALT SINIR: Sil + Bar satırının 5px üstü
   // Dock yüksekliği (sil/bar yüksekliği) + içerikten dock’a bırakılacak boşluk
-  const dockTotal =
-    UI.dockHeight + UI.dockGapFromContent + UI.edgeGap; // 40 + 10 + 5
+  const dockTotal = UI.dockHeight + UI.dockGapFromContent + UI.edgeGap; // 40 + 10 + 5
 
-  const maxTop =
-    centerH && blockH ? Math.max(minTop, centerH - blockH - dockTotal) : 420;
+  const maxTop = centerH && blockH ? Math.max(minTop, centerH - blockH - dockTotal) : 420;
 
   // Ölçümler güncellenince contentTop’u sınırlar içinde tut
   useEffect(() => {
@@ -253,6 +243,20 @@ function AppInner() {
     setWords(next);
     await saveWords(next);
   };
+
+  // ✅ ANDROID ALT NAV BAR RENGİ: ÜSTTEKİ MAVİ TONLA AYNI
+  const topBarColor = COLORS.brandBlue ?? COLORS.cardBlue;
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    (async () => {
+      try {
+        await NavigationBar.setBackgroundColorAsync(topBarColor);
+        await NavigationBar.setButtonStyleAsync("light");
+      } catch {
+        // sessiz geç
+      }
+    })();
+  }, [topBarColor]);
 
   // ===========================
   // Flip helpers
@@ -351,10 +355,7 @@ function AppInner() {
       return;
     }
 
-    const next = [
-      ...words,
-      { id: makeId(), word: w, meaning: m, createdAt: Date.now() },
-    ];
+    const next = [...words, { id: makeId(), word: w, meaning: m, createdAt: Date.now() }];
 
     await persist(next);
     setAddModalOpen(false);
@@ -400,11 +401,7 @@ function AppInner() {
       resetToFront();
       setArmedDeleteId(null);
 
-      showNotice(
-        "İçe aktarıldı",
-        `${added} yeni kelime eklendi.\nToplam: ${merged.length}`,
-        "success"
-      );
+      showNotice("İçe aktarıldı", `${added} yeni kelime eklendi.\nToplam: ${merged.length}`, "success");
     } catch (e: any) {
       showNotice("Hata", e?.message ?? "Dosya içe aktarma başarısız.", "error");
     }
@@ -509,19 +506,13 @@ function AppInner() {
     outputRange: [0, 0, 1],
   });
 
-  const cardBg = flipped
-    ? (COLORS.meaningBlue ?? "#60A5FA")
-    : (COLORS.brandBlue ?? COLORS.cardBlue);
+  const cardBg = flipped ? (COLORS.meaningBlue ?? "#60A5FA") : (COLORS.brandBlue ?? COLORS.cardBlue);
 
   const armed = !!armedDeleteId && current?.id === armedDeleteId;
 
   return (
     <View style={styles.container}>
-      <StatusBar
-        barStyle="light-content"
-        backgroundColor={COLORS.brandBlue ?? COLORS.cardBlue}
-        translucent={false}
-      />
+      <StatusBar barStyle="light-content" backgroundColor={topBarColor} translucent={false} />
 
       {/* Top Bar */}
       <View style={[styles.topBarWrap, { paddingTop: topPad }]}>
@@ -535,9 +526,7 @@ function AppInner() {
 
           <View style={{ flex: 1 }}>
             <Text style={styles.title}>LexiKart</Text>
-            <Text style={styles.subtitle}>
-              Dokun: kelime/anlam • Previous/Next: gez
-            </Text>
+            <Text style={styles.subtitle}>Dokun: kelime/anlam • Previous/Next: gez</Text>
           </View>
 
           <View style={styles.countPill}>
@@ -547,10 +536,7 @@ function AppInner() {
       </View>
 
       {/* Content */}
-      <View
-        style={[styles.centerArea, { paddingTop: contentTop }]}
-        onLayout={onCenterLayout}
-      >
+      <View style={[styles.centerArea, { paddingTop: contentTop }]} onLayout={onCenterLayout}>
         {/* ✅ içerik bloğunu ölçmek için wrapper */}
         <View onLayout={onBlockLayout}>
           <Pressable
@@ -650,9 +636,7 @@ function AppInner() {
           </View>
 
           {armed && (
-            <Text style={styles.deleteHint}>
-              Silmek için sol alttaki butona 2. kez bas (2.5 sn içinde)
-            </Text>
+            <Text style={styles.deleteHint}>Silmek için sol alttaki butona 2. kez bas (2.5 sn içinde)</Text>
           )}
         </View>
       </View>
@@ -723,9 +707,7 @@ function AppInner() {
       <ConfirmModal
         visible={clearConfirmOpen}
         title="Hepsi silinsin mi?"
-        message={`Tüm kelimeler kalıcı olarak silinecek.${
-          words.length ? `\nToplam: ${words.length}` : ""
-        }`}
+        message={`Tüm kelimeler kalıcı olarak silinecek.${words.length ? `\nToplam: ${words.length}` : ""}`}
         cancelText="Vazgeç"
         confirmText="Sil"
         danger
@@ -776,34 +758,19 @@ function NoticeModal({
   const badgeLabel = tone === "success" ? "✓" : tone === "error" ? "!" : "i";
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={noticeStyles.backdrop} onPress={onClose} />
       <View style={noticeStyles.center}>
         <View style={noticeStyles.card}>
-          <View
-            style={[
-              noticeStyles.badge,
-              { backgroundColor: badgeBg, borderColor: badgeBorder },
-            ]}
-          >
-            <Text style={[noticeStyles.badgeText, { color: badgeText }]}>
-              {badgeLabel}
-            </Text>
+          <View style={[noticeStyles.badge, { backgroundColor: badgeBg, borderColor: badgeBorder }]}>
+            <Text style={[noticeStyles.badgeText, { color: badgeText }]}>{badgeLabel}</Text>
           </View>
 
           <Text style={noticeStyles.title}>{title}</Text>
           <Text style={noticeStyles.msg}>{message}</Text>
 
           <Pressable
-            style={({ pressed }) => [
-              noticeStyles.okBtn,
-              pressed && noticeStyles.pressed,
-            ]}
+            style={({ pressed }) => [noticeStyles.okBtn, pressed && noticeStyles.pressed]}
             onPress={onClose}
           >
             <Text style={noticeStyles.okText}>Tamam</Text>
@@ -902,11 +869,11 @@ const UI = {
   // ✅ Sil ile bar arası boşluk
   barGap: 12,
 
-  // ✅ 5px sınırlar burası üst bar ayarı
+  // ✅ 5px sınırlar burası
   edgeGap: 20,
 
   // ✅ içerik ile dock arası boşluk (alt sınır hesabında kullanılır) burası
-  dockGapFromContent: 70,
+  dockGapFromContent: 60,
 
   // 🔥 BURASI: Sil + Sürükle yüksekliği (ikisi de buna göre)
   dockHeight: 40,
@@ -1085,7 +1052,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(15,23,42,0.12)",
     shadowColor: "#000",
-    shadowOpacity: 0.10,
+    shadowOpacity: 0.1,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 8 },
     elevation: 8,
