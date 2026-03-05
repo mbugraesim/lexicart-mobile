@@ -12,6 +12,8 @@ import {
   StatusBar,
   Easing,
   Modal,
+  PanResponder,
+  LayoutChangeEvent,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as DocumentPicker from "expo-document-picker";
@@ -164,6 +166,54 @@ function AppInner() {
   const [noticeTone, setNoticeTone] = useState<"info" | "success" | "error">(
     "info"
   );
+
+  // ✅ BLOK YÜKSEKLİĞİ (ilk açılış 140)
+  const [contentTop, setContentTop] = useState(140);
+
+  // ✅ ölçümler (5px sınır için)
+  const [centerH, setCenterH] = useState(0);
+  const [blockH, setBlockH] = useState(0);
+
+  const clamp = (v: number, min: number, max: number) =>
+    Math.max(min, Math.min(max, v));
+
+  // ✅ 5px ÜST SINIR: mavi barın 5px altı (centerArea zaten barın altında)
+  const minTop = UI.edgeGap; // = 5
+
+  // ✅ 5px ALT SINIR: Sil + Bar satırının 5px üstü
+  // Dock yüksekliği (sil/bar yüksekliği) + içerikten dock’a bırakılacak boşluk
+  const dockTotal =
+    UI.dockHeight + UI.dockGapFromContent + UI.edgeGap; // 40 + 10 + 5
+
+  const maxTop =
+    centerH && blockH ? Math.max(minTop, centerH - blockH - dockTotal) : 420;
+
+  // Ölçümler güncellenince contentTop’u sınırlar içinde tut
+  useEffect(() => {
+    setContentTop((prev) => clamp(prev, minTop, maxTop));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [centerH, blockH]);
+
+  // ✅ dx birikimli geldiği için: sürükleme başladığı anki değeri yakalıyoruz
+  const startTopRef = useRef(140);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 4,
+      onPanResponderGrant: () => {
+        startTopRef.current = contentTop;
+      },
+      onPanResponderMove: (_, g) => {
+        const sensitivity = UI.dragSensitivity;
+
+        // sağa (dx+) => yukarı çıksın => paddingTop AZALSIN
+        // sola (dx-) => aşağı insin => paddingTop ARTSIN
+        const next = startTopRef.current - g.dx * sensitivity;
+
+        setContentTop(clamp(next, minTop, maxTop));
+      },
+    })
+  ).current;
 
   const showNotice = (
     title: string,
@@ -416,9 +466,25 @@ function AppInner() {
   // ===========================
   const topPad = insets.top + UI.topBarExtraTop;
 
-  // ✅ Delete button anchor (buradan konum ayarla)
-  const delRight = UI.deleteAnchor.right;
-  const delBottom = Math.max(insets.bottom, 10) + UI.deleteAnchor.bottom;
+  // ✅ Sil sol altta (AMA en alta yapışmasın -> UI.dockBottom ile yukarı al)
+  const delLeft = UI.deleteAnchor.left;
+
+  // 🔥 BURASI: Sil + Sürükle bloğunu yukarı/aşağı aldığın yer
+  // insets.bottom + UI.dockBottom (alt güvenli alan + senin istediğin mesafe)
+  const dockBottom = Math.max(0, insets.bottom) + UI.dockBottom;
+
+  // ===========================
+  // Layout ölçümleri
+  // ===========================
+  const onCenterLayout = (e: LayoutChangeEvent) => {
+    const h = e.nativeEvent.layout.height;
+    if (h && h !== centerH) setCenterH(h);
+  };
+
+  const onBlockLayout = (e: LayoutChangeEvent) => {
+    const h = e.nativeEvent.layout.height;
+    if (h && h !== blockH) setBlockH(h);
+  };
 
   // ===========================
   // Animated styles (3D Flip)
@@ -481,117 +547,123 @@ function AppInner() {
       </View>
 
       {/* Content */}
-      <View style={styles.centerArea}>
-        <Pressable
-          style={[styles.card, { backgroundColor: cardBg }]}
-          onPress={onPressCard}
-          disabled={!current}
-        >
-          <View style={styles.flipWrap}>
-            <Animated.View
-              style={[
-                styles.face,
-                {
-                  opacity: frontOpacity,
-                  transform: [{ perspective: 1000 }, { rotateY: frontRotate }],
-                },
-              ]}
-            >
-              <Text style={styles.cardText}>
-                {!current
-                  ? "Henüz kelime yok.\nMenüden TXT içe aktar veya kelime ekle."
-                  : current.word}
-              </Text>
-            </Animated.View>
+      <View
+        style={[styles.centerArea, { paddingTop: contentTop }]}
+        onLayout={onCenterLayout}
+      >
+        {/* ✅ içerik bloğunu ölçmek için wrapper */}
+        <View onLayout={onBlockLayout}>
+          <Pressable
+            style={[styles.card, { backgroundColor: cardBg }]}
+            onPress={onPressCard}
+            disabled={!current}
+          >
+            <View style={styles.flipWrap}>
+              <Animated.View
+                style={[
+                  styles.face,
+                  {
+                    opacity: frontOpacity,
+                    transform: [{ perspective: 1000 }, { rotateY: frontRotate }],
+                  },
+                ]}
+              >
+                <Text style={styles.cardText}>
+                  {!current
+                    ? "Henüz kelime yok.\nMenüden TXT içe aktar veya kelime ekle."
+                    : current.word}
+                </Text>
+              </Animated.View>
 
-            <Animated.View
-              style={[
-                styles.face,
-                styles.faceBack,
-                {
-                  opacity: backOpacity,
-                  transform: [{ perspective: 1000 }, { rotateY: backRotate }],
-                },
+              <Animated.View
+                style={[
+                  styles.face,
+                  styles.faceBack,
+                  {
+                    opacity: backOpacity,
+                    transform: [{ perspective: 1000 }, { rotateY: backRotate }],
+                  },
+                ]}
+              >
+                <Text style={styles.cardText}>
+                  {!current
+                    ? "Henüz kelime yok.\nMenüden TXT içe aktar veya kelime ekle."
+                    : current.meaning}
+                </Text>
+              </Animated.View>
+            </View>
+
+            {!!current && (
+              <View style={styles.cardFooter}>
+                <View style={styles.progressPill}>
+                  <Text style={styles.progressText}>
+                    {Math.min(index + 1, total)} / {total}
+                  </Text>
+                </View>
+              </View>
+            )}
+          </Pressable>
+
+          {/* Actions: Previous + Next */}
+          <View style={styles.actionsRow}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.actionBtn,
+                styles.secondaryBtn,
+                (!current || !total) && styles.disabled,
+                pressed && current && styles.pressedBtn,
               ]}
+              onPress={goPrev}
+              disabled={!current}
             >
-              <Text style={styles.cardText}>
-                {!current
-                  ? "Henüz kelime yok.\nMenüden TXT içe aktar veya kelime ekle."
-                  : current.meaning}
-              </Text>
-            </Animated.View>
+              <Text style={styles.actionText}>Previous</Text>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.actionBtn,
+                styles.primaryBtn,
+                (!current || !total) && styles.disabled,
+                pressed && current && styles.pressedBtn,
+              ]}
+              onPress={goNext}
+              disabled={!current}
+            >
+              <Text style={styles.actionText}>Next</Text>
+            </Pressable>
           </View>
 
-          {!!current && (
-            <View style={styles.cardFooter}>
-              <View style={styles.progressPill}>
-                <Text style={styles.progressText}>
-                  {Math.min(index + 1, total)} / {total}
-                </Text>
-              </View>
-            </View>
+          {/* ✅ Random */}
+          <View style={styles.randomRow}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.randomBtn,
+                styles.primaryBtn,
+                (!current || !total) && styles.disabled,
+                pressed && current && styles.pressedBtn,
+              ]}
+              onPress={goRandom}
+              disabled={!current}
+            >
+              <Text style={styles.actionText}>Random</Text>
+            </Pressable>
+          </View>
+
+          {armed && (
+            <Text style={styles.deleteHint}>
+              Silmek için sol alttaki butona 2. kez bas (2.5 sn içinde)
+            </Text>
           )}
-        </Pressable>
-
-        {/* Actions: Previous + Next */}
-        <View style={styles.actionsRow}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.actionBtn,
-              styles.secondaryBtn,
-              (!current || !total) && styles.disabled,
-              pressed && current && styles.pressedBtn,
-            ]}
-            onPress={goPrev}
-            disabled={!current}
-          >
-            <Text style={styles.actionText}>Previous</Text>
-          </Pressable>
-
-          <Pressable
-            style={({ pressed }) => [
-              styles.actionBtn,
-              styles.primaryBtn,
-              (!current || !total) && styles.disabled,
-              pressed && current && styles.pressedBtn,
-            ]}
-            onPress={goNext}
-            disabled={!current}
-          >
-            <Text style={styles.actionText}>Next</Text>
-          </Pressable>
         </View>
-
-        {/* ✅ Random (Previous/Next altına, tam genişlik + yazı görünür) */}
-        <View style={styles.randomRow}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.randomBtn, // ✅ sadece random için: tam genişlik + aynı yükseklik
-              styles.primaryBtn, // ✅ Next ile aynı renk
-              (!current || !total) && styles.disabled,
-              pressed && current && styles.pressedBtn,
-            ]}
-            onPress={goRandom}
-            disabled={!current}
-          >
-            <Text style={styles.actionText}>Random</Text>
-          </Pressable>
-        </View>
-
-        {armed && (
-          <Text style={styles.deleteHint}>
-            Silmek için sağ alttaki butona 2. kez bas (2.5 sn içinde)
-          </Text>
-        )}
       </View>
 
-      {/* ✅ Sil butonu (ghost pill) */}
+      {/* ✅ Sil butonu (SOL ALT) */}
       <Pressable
         onPress={pressDeleteCurrent}
         disabled={!current}
         style={({ pressed }) => [
           styles.deletePill,
-          { right: delRight, bottom: delBottom },
+          { left: delLeft, bottom: dockBottom },
           (!current || !total) && styles.deletePillDisabled,
           pressed && current && styles.deletePillPressed,
           armed && styles.deletePillArmed,
@@ -601,6 +673,22 @@ function AppInner() {
           {armed ? "Tekrar Sil" : "Sil"}
         </Text>
       </Pressable>
+
+      {/* ✅ UZUN YATAY DRAG BAR: sağ alttan başlar, Sil'e kadar uzar */}
+      <View
+        {...panResponder.panHandlers}
+        style={[
+          styles.hDragBarWide,
+          {
+            bottom: dockBottom, // ✅ sil ile aynı hizada
+            right: UI.pagePadX, // ✅ sağdan başla
+            left: delLeft + UI.deletePillWidth + UI.barGap, // ✅ Sil'den sonra başla
+          },
+        ]}
+      >
+        <View style={styles.hDragBarInner} />
+        <Text style={styles.hDragBarText}>⇦ sürükle ⇨</Text>
+      </View>
 
       <MenuDrawer
         visible={menuOpen}
@@ -803,22 +891,35 @@ const UI = {
   cardRadius: 26,
   centerPadBottom: 18,
 
-  // ✅ CTRL+F: CONTENT_BLOCK_TOP
-  // Bu değer; kart + butonlar bloğunu komple aşağı/yukarı taşır (centerArea paddingTop) burası yükseklik
-  contentBlockTop: 120,
-
-  // ✅ Sil butonunu buradan taşı: (istediğin yere koy)
+  // ✅ Sil sol alt
   deleteAnchor: {
-    right: 30, // sağdan
-    bottom: 16, // alttan (insets ile otomatik ekleniyor)
+    left: 16,
   },
+
+  // ✅ Sil butonunu sabit genişlikte tutalım
+  deletePillWidth: 74,
+
+  // ✅ Sil ile bar arası boşluk
+  barGap: 12,
+
+  // ✅ 5px sınırlar burası üst bar ayarı
+  edgeGap: 20,
+
+  // ✅ içerik ile dock arası boşluk (alt sınır hesabında kullanılır) burası
+  dockGapFromContent: 70,
+
+  // 🔥 BURASI: Sil + Sürükle yüksekliği (ikisi de buna göre)
+  dockHeight: 40,
+
+  // 🔥 BURASI: Sil + Sürükle en alta yapışmasın (ne kadar yukarıda dursun)
+  dockBottom: 18, // artır -> daha yukarı çıkar, azalt -> aşağı iner burası
+
+  // ✅ sürükleme hassasiyeti
+  dragSensitivity: 0.9,
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.bg,
-  },
+  container: { flex: 1, backgroundColor: COLORS.bg },
 
   topBarWrap: {
     backgroundColor: COLORS.brandBlue ?? COLORS.cardBlue,
@@ -877,7 +978,6 @@ const styles = StyleSheet.create({
   centerArea: {
     flex: 1,
     paddingHorizontal: UI.pagePadX,
-    paddingTop: UI.contentBlockTop, // ✅ CTRL+F: CONTENT_BLOCK_TOP
     paddingBottom: UI.centerPadBottom,
     justifyContent: "flex-start",
   },
@@ -941,17 +1041,9 @@ const styles = StyleSheet.create({
   },
   progressText: { color: COLORS.white, fontWeight: "900" },
 
-  actionsRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 12,
-  },
+  actionsRow: { flexDirection: "row", gap: 10, marginTop: 12 },
 
-  // ✅ Random satırı (tam genişlik)
-  randomRow: {
-    width: "100%",
-    marginTop: 10,
-  },
+  randomRow: { width: "100%", marginTop: 10 },
 
   actionBtn: {
     flex: 1,
@@ -961,7 +1053,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  // ✅ Random buton: tam genişlik + Previous/Next ile aynı yükseklik
   randomBtn: {
     width: "100%",
     paddingVertical: 13,
@@ -984,11 +1075,11 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
 
-  // ✅ Yeni Sil Butonu: ghost pill (kırmızı basmıyor)
+  // ✅ Sil (SOL ALT)
   deletePill: {
     position: "absolute",
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    width: UI.deletePillWidth,
+    height: UI.dockHeight, // 🔥 BURASI: Sil yüksekliği
     borderRadius: 14,
     backgroundColor: "rgba(255,255,255,0.85)",
     borderWidth: 1,
@@ -998,6 +1089,8 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 8 },
     elevation: 8,
+    alignItems: "center",
+    justifyContent: "center",
   },
   deletePillText: {
     color: "rgba(15,23,42,0.78)",
@@ -1006,13 +1099,43 @@ const styles = StyleSheet.create({
   },
   deletePillPressed: { transform: [{ scale: 0.99 }], opacity: 0.92 },
   deletePillDisabled: { opacity: 0.45 },
-
-  // Armed olunca hafif uyarı (koyu kırmızı değil)
   deletePillArmed: {
     backgroundColor: "rgba(255,245,245,0.95)",
     borderColor: "rgba(239,68,68,0.22)",
   },
-  deletePillTextArmed: {
-    color: "rgba(185,28,28,0.9)",
+  deletePillTextArmed: { color: "rgba(185,28,28,0.9)" },
+
+  // ✅ UZUN YATAY DRAG BAR
+  hDragBarWide: {
+    position: "absolute",
+    height: UI.dockHeight, // 🔥 BURASI: Sürükle bar yüksekliği
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.82)",
+    borderWidth: 1,
+    borderColor: "rgba(15,23,42,0.10)",
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  hDragBarInner: {
+    position: "absolute",
+    left: 10,
+    right: 10,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: "rgba(15,23,42,0.14)",
+    top: 10,
+  },
+  hDragBarText: {
+    marginTop: 10,
+    fontWeight: "900",
+    fontSize: 12,
+    color: "rgba(15,23,42,0.65)",
+    letterSpacing: 0.2,
   },
 });
